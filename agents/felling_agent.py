@@ -210,7 +210,7 @@ class FellingFormAgent(BaseFormAgent):
         userdata = self.session.userdata
         userdata.felling_form.tree_girth = girth
         await send_to_frontend(userdata.ctx.room, {"tree_girth": girth}, topic="formUpdate")
-        return await self._ask_for_confirmation(self)
+        return await self._ask_for_confirmation()
 
 
 
