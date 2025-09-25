@@ -6,10 +6,12 @@ Provides common lifecycle hooks, transfer logic, and form scaffolding.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Tuple
+from typing import Tuple, Annotated
 
-from livekit.agents.voice import Agent, RunContext
+from livekit.agents.voice import Agent
 from livekit.agents.llm import function_tool
+from livekit.plugins import openai
+from pydantic import Field
 
 logger = logging.getLogger(__name__)
 
@@ -18,13 +20,13 @@ logger = logging.getLogger(__name__)
 # BaseAgent
 # -------------------------------------------------------------------
 
-class BaseAgent(Agent, ABC):
+class BaseAgent(Agent):
     """
     Core base class for all agents.
     Handles lifecycle (on_enter), context stitching, and agent transfer.
     """
 
-    async def on_enter(self, context: RunContext) -> None:
+    async def on_enter(self) -> None:
         """
         Called whenever this agent becomes active.
         Default: logs entry, restores conversation continuity if needed.
@@ -32,98 +34,102 @@ class BaseAgent(Agent, ABC):
         agent_name = self.__class__.__name__
         logger.info(f"🔄 Entering {agent_name}")
 
-        userdata = context.userdata
-        prev_agent = getattr(userdata, "prev_agent", None)
+        userdata = self.session.userdata
+        chat_ctx = self.chat_ctx.copy()
 
-        if prev_agent:
-            logger.debug(f"🪢 Stitching context from {prev_agent.__class__.__name__}")
-            # Re-inject last user message if needed
-            if prev_agent.ctx and prev_agent.ctx.chat_ctx:
-                last_msg = prev_agent.ctx.chat_ctx.last_user_message
-                if last_msg:
-                    context.chat_ctx.add_message(last_msg)
+        # Add the previous agent's chat history to the current agent
+        if isinstance(userdata.prev_agent, Agent):
+            truncated_chat_ctx = userdata.prev_agent.chat_ctx.copy(
+                exclude_instructions=True, exclude_function_call=False
+            ).truncate(max_items=6)
+            existing_ids = {item.id for item in chat_ctx.items}
+            items_copy = [item for item in truncated_chat_ctx.items if item.id not in existing_ids]
+            chat_ctx.items.extend(items_copy)
 
-    async def _transfer_to_agent(
-        self, agent_name: str, context: RunContext
-    ) -> Tuple[Agent, str]:
+        # Add an instruction including the user data
+        chat_ctx.add_message(
+            role="system",
+            content=f"You are {agent_name} agent.",
+        )
+        await self.update_chat_ctx(chat_ctx)
+
+    async def _transfer_to_agent(self, name: str) -> Tuple[Agent, str]:
         """
         Utility to transfer control to another agent by name.
         """
-        userdata = context.userdata
-        current_agent = context.session.current_agent
-        next_agent = userdata.agents.get(agent_name)
-
-        if not next_agent:
-            logger.error(f"❌ Attempted transfer to unknown agent: {agent_name}")
-            return current_agent, f"Agent {agent_name} not found."
-
+        userdata = self.session.userdata
+        current_agent = self.session.current_agent
+        next_agent = userdata.agents[name]
         userdata.prev_agent = current_agent
-        logger.info(f"➡️ Transferring from {current_agent.__class__.__name__} to {agent_name}")
-        return next_agent, f"Transferring to {agent_name}."
+        return next_agent, f"Transferring to {name}."
 
-    # ----------------------------------------------------------------
-    # Default Tool: Go back to greeter
-    # ----------------------------------------------------------------
     @function_tool()
-    async def to_greeter(self, context: RunContext) -> Tuple[Agent, str]:
-        """
-        Return to greeter agent.
-        Can be invoked by LLM when user says "go back" / "main menu".
-        """
-        return await self._transfer_to_agent("greeter", context)
+    async def to_greeter(self) -> tuple:
+        """Called when user asks any unrelated questions or wants to go back to main menu."""
+        return await self._transfer_to_agent("greeter", self)
+
+    @function_tool()
+    async def set_language(
+        self,
+        language: Annotated[str, Field(description="The user's preferred language: english or kannada")],
+    ) -> str:
+        """Called when the user selects their preferred language."""
+        from utils.language import update_stt_language
+        
+        userdata = self.session.userdata
+        language_lower = language.lower()
+        
+        if language_lower not in ["english", "kannada"]:
+            return "Please choose English or Kannada."
+        
+        userdata.preferred_language = language_lower
+        userdata.language_selected = True
+        
+        # Update STT language hints based on selected language
+        await update_stt_language(self.session, language_lower)
+        
+        if language_lower == "kannada":
+            return "ಧನ್ಯವಾದಗಳು! ನಿಮ್ಮ ಮಾಹಿತಿಯನ್ನು ನಾನು ಸಂಗ್ರಹಿಸುತ್ತೇನೆ."
+        else:
+            return "Thank you! I'll help you fill out the form."
 
 
 # -------------------------------------------------------------------
 # BaseFormAgent
 # -------------------------------------------------------------------
 
-class BaseFormAgent(BaseAgent, ABC):
+class BaseFormAgent(BaseAgent):
     """
     Base class for form-filling agents (e.g. contact form, felling form).
     Adds scaffolding for collecting fields, asking confirmation, and submission.
     """
 
-    @abstractmethod
-    async def _start_form_collection(self, context: RunContext) -> str:
-        """
-        Kick off form collection flow (implemented by subclass).
-        Example: ask for applicant name, or first field.
-        """
-        ...
-
-    async def on_enter(self, context: RunContext) -> None:
+    async def on_enter(self) -> None:
         """
         Extended lifecycle: after base enter, begin form collection.
         """
-        await super().on_enter(context)
+        await super().on_enter()
+        agent_name = self.__class__.__name__
+        logger.info(f"Entering {agent_name}")
+        
+        userdata = self.session.userdata
+        
+        # Form agents should already have language selected from greeter
+        if userdata.language_selected:
+            await self._start_form_collection()
 
-        userdata = context.userdata
-        if not getattr(userdata, "language_selected", False):
-            logger.debug("🌐 No language selected yet, waiting for language agent/logic.")
-            return
+    async def _start_form_collection(self):
+        """Override this method in subclasses to start collecting form data"""
+        pass
 
-        # Start the actual form filling
-        prompt = await self._start_form_collection(context)
-        if prompt:
-            await context.send(prompt)
-
-    async def _ask_for_confirmation(self, context: RunContext) -> str:
+    async def _ask_for_confirmation(self) -> str:
         """
         Standard confirmation before form submission.
         """
-        userdata = context.userdata
+        userdata = self.session.userdata
         userdata.awaiting_confirmation = True
 
-        if getattr(userdata, "preferred_language", "english") == "kannada":
+        if userdata.preferred_language == "kannada":
             return "ಧನ್ಯವಾದಗಳು. ನೀವು ಫಾರ್ಮ್ ಸಲ್ಲಿಸಲು ಬಯಸುವಿರಾ?"
         else:
             return "Thank you. Would you like to submit the form now?"
-
-    async def _finalize_submission(self, context: RunContext) -> str:
-        """
-        Default finalize logic: can be overridden per form.
-        """
-        userdata = context.userdata
-        userdata.should_submit = True
-        logger.info(f"📨 Form submission flagged for {self.__class__.__name__}")
-        return "Your form has been submitted successfully."

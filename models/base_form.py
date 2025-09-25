@@ -52,3 +52,9 @@ class BaseFormData:
         """
         if hasattr(self, field_name):
             setattr(self, field_name, value)
+
+    def set_field(self, field_name: str, value: Optional[str]) -> None:
+        """
+        Alias for update_field - used by data handler.
+        """
+        self.update_field(field_name, value)

@@ -102,6 +102,57 @@ def normalize_text(text: str, target_language: Literal["english", "kannada"]) ->
 
 
 # -------------------------------------------------------------------
+# STT Language Updates
+# -------------------------------------------------------------------
+
+async def update_stt_language(session, language: str):
+    """Update STT language hints based on user's selected language"""
+    from livekit.plugins import soniox
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if language.lower() == "kannada":
+            # Focus on Kannada with English fallback for mixed speech
+            language_hints = ["kn", "en"]
+            context = (
+                "Karnataka Government voice assistant in Kannada script. "
+                "Form filling: names, addresses, phone numbers, tree species, land measurements. "
+                "Common Kannada words: ಹೆಸರು, ವಿಳಾಸ, ಫೋನ್, ಗ್ರಾಮ, ತಾಲೂಕು, ಜಿಲ್ಲೆ, ಮರ, ವಯಸ್ಸು. "
+                "Mixed Kannada-English speech allowed."
+            )
+        else:
+            # ULTRA STRICT ENGLISH ONLY - NO OTHER LANGUAGES DETECTED
+            language_hints = ["en"]  # ABSOLUTELY ONLY English
+            context = (
+                "STRICT ENGLISH TRANSCRIPTION ONLY. IGNORE ALL OTHER LANGUAGES. "
+                "FORCE ROMANIZE: آفتاب حسین → Aftaab Hussain, محمد خاصم → Mohammed Khasim "
+                "DETECT LANGUAGE AS ENGLISH ONLY. DO NOT DETECT URDU, ARABIC, HINDI. "
+                "TRANSCRIBE ALL SPEECH AS ENGLISH WORDS IN LATIN SCRIPT. "
+                "COMMON INDIAN NAMES IN ENGLISH: Aftaab, Hussain, Mohammed, Khasim, Ahmed, Ali, Khan, Sheikh "
+                "WAIT FOR COMPLETE MULTI-WORD NAMES: FirstName LastName pattern. "
+                "EXAMPLES: Aftaab Hussain (complete), Mohammed Khasim (complete), Ahmed Ali (complete). "
+                "ABSOLUTELY FORBIDDEN: Arabic script آفتاب, Urdu script, Devanagari script. "
+                "MANDATORY: A-Z a-z 0-9 spaces only. English government form system. "
+                "OVERRIDE LANGUAGE DETECTION - FORCE ENGLISH OUTPUT REGARDLESS OF INPUT LANGUAGE."
+            )
+
+        # Create new STT options with updated language settings
+        new_soniox_options = soniox.STTOptions(
+            language_hints=language_hints,
+            context=context,
+        )
+
+        # Update the session's STT
+        session._stt = soniox.STT(params=new_soniox_options)
+        logger.info(f"Updated STT language hints to: {language_hints}")
+        
+    except Exception as e:
+        logger.error(f"Failed to update STT language: {e}")
+
+
+# -------------------------------------------------------------------
 # Example (manual test)
 # -------------------------------------------------------------------
 if __name__ == "__main__":
