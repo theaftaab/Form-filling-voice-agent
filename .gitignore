@@ -1,5 +1,6 @@
 .vscode/
 .DS_store
 .env
+.venv
 .gitignore
 __pycache__
