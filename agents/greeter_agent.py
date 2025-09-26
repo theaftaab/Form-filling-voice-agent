@@ -4,8 +4,10 @@ Greeter Agent - simplified version that works with the current LiveKit structure
 """
 
 import logging
+from typing import Annotated
 from livekit.agents.llm import function_tool
 from livekit.plugins import openai
+from pydantic import Field
 
 from agents.base_agent import BaseAgent
 from utils.frontend import send_to_frontend
@@ -22,20 +24,21 @@ class GreeterAgent(BaseAgent):
     def __init__(self) -> None:
         super().__init__(
             instructions=(
-                "You are a friendly receptionist for the Karnataka Government services. "
-                "Your job is to greet users, help them select their language (English or Kannada), "
-                "and understand what service they need. Guide them to the right service: "
-                "- 'Contact Form' for general inquiries and communication "
-                "- 'Felling Transit Permission' for tree cutting permissions "
-                "Use the appropriate transfer tools based on their request."
+                "You are a helpful and friendly government service assistant for Karnataka. "
+                "Have natural conversations with users - don't sound robotic or like a telecaller. "
+                "Listen to what users need and help them accordingly. "
+                "If their request relates to general inquiries, complaints, feedback, or contacting a department, use the contact form. "
+                "If they need tree cutting permissions, forest clearances, or felling transit permits, use the felling form. "
+                "If their request doesn't match these services, politely explain you can't help with that specific issue. "
+                "Always be conversational and helpful, not mechanical."
             ),
             llm=openai.LLM(model="gpt-4o-mini", parallel_tool_calls=False),
             tts=openai.TTS(voice="alloy"),
             # tools=[
-            #     # ✅ keep set_language from BaseAgent (not duplicated anywhere else)
-            #     # self.set_language,
+            #     self.set_language,
             #     self.to_contact_form,
             #     self.to_felling_form,
+            #     self.detect_intent,
             # ],
         )
 
@@ -46,8 +49,8 @@ class GreeterAgent(BaseAgent):
 
         if not userdata.language_selected:
             await self.session.say(
-                "Hello! Welcome to Karnataka Government services. "
-                "Please select your preferred language - English or Kannada?"
+                "Hello! I'm here to help you with Karnataka Government services. "
+                "Would you prefer to continue in English or Kannada?"
             )
         else:
             await self._ask_for_service_intent(userdata.preferred_language)
@@ -56,16 +59,14 @@ class GreeterAgent(BaseAgent):
         """Ask what service the user needs"""
         messages = {
             "english": (
-                "How can I help you today? I can assist you with: "
-                "- Contact Form for general inquiries "
-                "- Felling Transit Permission for tree cutting permits "
-                "What would you like to do?"
+                "Great! How can I help you today? Just tell me what you need - "
+                "whether it's a general inquiry, complaint, or if you need permission for tree cutting. "
+                "What brings you here?"
             ),
             "kannada": (
-                "ನಾನು ಇಂದು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು? ನಾನು ನಿಮಗೆ ಸಹಾಯ ಮಾಡಬಲ್ಲೆ: "
-                "- ಸಾಮಾನ್ಯ ವಿಚಾರಣೆಗಳಿಗಾಗಿ ಸಂಪರ್ಕ ಫಾರ್ಮ್ "
-                "- ಮರ ಕತ್ತರಿಸುವ ಪರವಾನಗಿಗಾಗಿ ಫೆಲ್ಲಿಂಗ್ ಟ್ರಾನ್ಸಿಟ್ ಪರ್ಮಿಷನ್ "
-                "ನೀವು ಏನು ಮಾಡಲು ಬಯಸುತ್ತೀರಿ?"
+                "ಚೆನ್ನಾಗಿದೆ! ನಾನು ಇಂದು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು? "
+                "ನಿಮಗೆ ಏನು ಬೇಕು ಎಂದು ಹೇಳಿ - ಸಾಮಾನ್ಯ ವಿಚಾರಣೆ, ದೂರು, ಅಥವಾ ಮರ ಕಡಿಯುವ ಅನುಮತಿ. "
+                "ನೀವು ಇಲ್ಲಿಗೆ ಏಕೆ ಬಂದಿದ್ದೀರಿ?"
             ),
         }
         message = messages.get((language or "").lower(), messages["english"])
@@ -101,3 +102,46 @@ class GreeterAgent(BaseAgent):
         )
 
         return await self._transfer_to_agent("felling")
+
+    @function_tool()
+    async def detect_intent(
+        self,
+        user_request: Annotated[str, Field(description="What the user is asking for or needs help with")],
+    ) -> str:
+        """Called when the user explains what they need help with."""
+        request_lower = user_request.lower()
+        userdata = self.session.userdata
+        
+        # Contact form - general inquiries, complaints, feedback, department contact
+        contact_keywords = [
+            'complaint', 'complain', 'feedback', 'inquiry', 'inquire', 'question', 'ask',
+            'contact', 'reach', 'speak', 'talk', 'department', 'office', 'help', 'support',
+            'information', 'details', 'know', 'find out', 'general', 'service', 'problem',
+            'issue', 'concern', 'suggestion', 'request', 'application status', 'status'
+        ]
+        
+        # Felling form - tree cutting, forest permissions
+        felling_keywords = [
+            'tree', 'trees', 'cut', 'cutting', 'fell', 'felling', 'remove', 'removal',
+            'forest', 'wood', 'timber', 'permission', 'permit', 'clearance', 'transit',
+            'transport', 'move', 'chop', 'harvest', 'logging'
+        ]
+        
+        # Check for contact form intent
+        if any(keyword in request_lower for keyword in contact_keywords):
+            agent, message = await self.to_contact_form()
+            if userdata.preferred_language == "kannada":
+                return "ಸರಿ, ನಾನು ನಿಮಗೆ ಸಂಪರ್ಕ ಫಾರ್ಮ್ ಭರ್ತಿ ಮಾಡಲು ಸಹಾಯ ಮಾಡುತ್ತೇನೆ."
+            return "I understand you need to contact a department or make an inquiry. Let me help you with the contact form."
+        
+        # Check for felling form intent  
+        if any(keyword in request_lower for keyword in felling_keywords):
+            agent, message = await self.to_felling_form()
+            if userdata.preferred_language == "kannada":
+                return "ಸರಿ, ನಾನು ನಿಮಗೆ ಮರ ಕಡಿಯುವ ಅನುಮತಿ ಫಾರ್ಮ್ ಭರ್ತಿ ಮಾಡಲು ಸಹಾಯ ಮಾಡುತ್ತೇನೆ."
+            return "I understand you need tree cutting permission. Let me help you with the felling transit permission form."
+        
+        # If no match, politely decline
+        if userdata.preferred_language == "kannada":
+            return "ಕ್ಷಮಿಸಿ, ನಾನು ಆ ವಿಷಯದಲ್ಲಿ ಸಹಾಯ ಮಾಡಲು ಸಾಧ್ಯವಿಲ್ಲ. ನಾನು ಕೇವಲ ಸಾಮಾನ್ಯ ವಿಚಾರಣೆಗಳು ಮತ್ತು ಮರ ಕಡಿಯುವ ಅನುಮತಿಗಳಿಗೆ ಸಹಾಯ ಮಾಡಬಲ್ಲೆ."
+        return "I'm sorry, I can't help you with that specific request. I can only assist with general inquiries and tree cutting permissions. Is there anything else I can help you with in these areas?"
