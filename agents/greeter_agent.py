@@ -32,8 +32,8 @@ class GreeterAgent(BaseAgent):
                 "If their request doesn't match these services, politely explain you can't help with that specific issue. "
                 "Always be conversational and helpful, not mechanical."
             ),
-            llm=openai.LLM(model="gpt-4o-mini", parallel_tool_calls=False),
-            tts=openai.TTS(voice="alloy"),
+            # llm=openai.LLM(model="gpt-4o-mini", parallel_tool_calls=False),
+            # tts=openai.TTS(voice="alloy"),
             # tools=[
             #     self.set_language,
             #     self.to_contact_form,
@@ -49,7 +49,7 @@ class GreeterAgent(BaseAgent):
 
         if not userdata.language_selected:
             await self.session.say(
-                "Hello! I'm here to help you with Karnataka Government services. "
+                "Hello! I'm here to help you with Karnataka Forest services. "
                 "Would you prefer to continue in English or Kannada?"
             )
         else:
@@ -64,9 +64,7 @@ class GreeterAgent(BaseAgent):
                 "What brings you here?"
             ),
             "kannada": (
-                "ಚೆನ್ನಾಗಿದೆ! ನಾನು ಇಂದು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು? "
-                "ನಿಮಗೆ ಏನು ಬೇಕು ಎಂದು ಹೇಳಿ - ಸಾಮಾನ್ಯ ವಿಚಾರಣೆ, ದೂರು, ಅಥವಾ ಮರ ಕಡಿಯುವ ಅನುಮತಿ. "
-                "ನೀವು ಇಲ್ಲಿಗೆ ಏಕೆ ಬಂದಿದ್ದೀರಿ?"
+                "ಇಂದು ನಾನು ನಿಮಗೆ ಯಾವ ರೀತಿಯಲ್ಲಿ ಸಹಾಯ ಮಾಡಬಹುದು?"
             ),
         }
         message = messages.get((language or "").lower(), messages["english"])

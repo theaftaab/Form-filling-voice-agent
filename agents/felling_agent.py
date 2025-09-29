@@ -29,8 +29,8 @@ class FellingFormAgent(BaseFormAgent):
                 "6. Taluk, 7. District, 8. Pincode, 9. Tree species, 10. Tree age, 11. Tree girth. "
                 "After collecting all fields, ask for confirmation and call confirm_and_submit_felling_form(). "
             ),
-            llm=openai.LLM(model="gpt-4o-mini"),
-            tts=openai.TTS(voice="alloy"),
+            # llm=openai.LLM(model="gpt-4o-mini"),
+            # tts=openai.TTS(voice="alloy"),
             # tools=[
             #     self.to_greeter,
             #     self.set_language,

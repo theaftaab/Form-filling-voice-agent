@@ -66,7 +66,7 @@ class BaseAgent(Agent):
     @function_tool()
     async def to_greeter(self) -> tuple:
         """Called when user asks any unrelated questions or wants to go back to main menu."""
-        return await self._transfer_to_agent("greeter", self)
+        return await self._transfer_to_agent("greeter")
 
     @function_tool()
     async def set_language(

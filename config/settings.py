@@ -1,27 +1,36 @@
 import os
 import logging
 from dotenv import load_dotenv
+from livekit.plugins import openai, soniox, elevenlabs
 
 print("Loading .env file...")
 load_dotenv()
 print(".env loaded successfully")
 
-LIVEKIT_URL = os.getenv("LIVEKIT_URL")
-LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
-LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
+# ------------------------------------------------------
+# Environment Variables
+# ------------------------------------------------------
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 SONIOX_API_KEY = os.getenv("SONIOX_API_KEY")
 
 SSL_CERT_FILE = os.getenv("SSL_CERT_FILE")
 DISABLE_SSL_VERIFY = os.getenv("DISABLE_SSL_VERIFY", "false").lower() == "true"
 
+# ------------------------------------------------------
+# ElevenLabs Configuration
+# ------------------------------------------------------
+
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")  # ✅ unified name
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")  # from voices list
+ELEVENLABS_MODEL_ID = os.getenv("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
+
+# ------------------------------------------------------
+# Defaults
+# ------------------------------------------------------
 
 DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "gpt-4o-mini")
-DEFAULT_TTS_VOICE = os.getenv("DEFAULT_TTS_VOICE", "alloy")
-
 SUPPORTED_LANGUAGES = ["english", "kannada"]
 
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
@@ -31,8 +40,28 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
+# ------------------------------------------------------
+# Default Plugins (LLM, STT, TTS)
+# ------------------------------------------------------
 
-# Setup logger
+DEFAULT_LLM = openai.LLM(model=DEFAULT_LLM_MODEL)
+
+DEFAULT_STT = soniox.STT(
+    params=soniox.STTOptions(
+        language_hints=["en", "kn"],
+        context="Karnataka Government voice assistant..."
+    )
+)
+
+DEFAULT_TTS = openai.TTS(
+    voice="alloy",  # voices: "alloy", "verse", "soft", "bright", etc.
+    model="gpt-4o-mini-tts"
+)
+
+# ------------------------------------------------------
+# Logger Setup
+# ------------------------------------------------------
+
 try:
     logger = logging.getLogger("gov-assistant")
     handler = logging.StreamHandler()
@@ -44,7 +73,6 @@ try:
     logger.addHandler(handler)
     logger.setLevel(LOG_LEVEL)
 except Exception as e:
-    # Fallback logger
     logger = logging.getLogger("gov-assistant")
     logger.setLevel(logging.INFO)
 
