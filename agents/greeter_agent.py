@@ -83,7 +83,7 @@ class GreeterAgent(BaseAgent):
             topic="navigation"
         )
 
-        return await self._transfer_to_agent("contact")
+        return await self.switch_agent("contact")
         # same for felling
 
     @function_tool()
@@ -99,7 +99,7 @@ class GreeterAgent(BaseAgent):
             topic="navigation"
         )
 
-        return await self._transfer_to_agent("felling")
+        return await self.switch_agent("felling")
 
     @function_tool()
     async def detect_intent(

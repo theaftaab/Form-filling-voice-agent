@@ -92,6 +92,33 @@ class BaseAgent(Agent):
             return "ಧನ್ಯವಾದಗಳು! ನಿಮ್ಮ ಮಾಹಿತಿಯನ್ನು ನಾನು ಸಂಗ್ರಹಿಸುತ್ತೇನೆ."
         else:
             return "Thank you! I'll help you fill out the form."
+    async def switch_agent(self, name: str):
+            """
+            Safely switch to another agent by name.
+            - Stops current activity
+            - Starts new agent cleanly
+            """
+            userdata = self.session.userdata
+            next_agent = userdata.agents[name]
+
+            # Stop current activity if one is running
+            try:
+                await self.session.stop_activity()
+            except Exception as e:
+                logger.warning(f"No activity to stop before switching: {e}")
+
+            # Track previous agent for context stitching
+            userdata.prev_agent = self
+
+            # Start the new agent
+            await self.session.start(
+                agent=next_agent,
+                room=userdata.ctx.room
+            )
+            if isinstance(next_agent, BaseFormAgent) and userdata.language_selected:
+                await next_agent._start_form_collection()
+
+            return next_agent, f"Switched to {name}."
 
 
 # -------------------------------------------------------------------
