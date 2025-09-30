@@ -14,3 +14,4 @@ dataclasses-json
 pytest
 black
 flake8
+pytest-asyncio
