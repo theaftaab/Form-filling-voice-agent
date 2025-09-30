@@ -58,6 +58,9 @@ class GreeterAgent(BaseAgent):
 
     async def _ask_for_service_intent(self, language):
         """Ask what service the user needs"""
+        userdata = self.session.userdata
+        userdata.preferred_language = (language or "english").lower()  # ✅ persist
+
         messages = {
             "english": (
                 "Great! How can I help you today? Just tell me what you need - "
@@ -68,8 +71,22 @@ class GreeterAgent(BaseAgent):
                 "ಇಂದು ನಾನು ನಿಮಗೆ ಯಾವ ರೀತಿಯಲ್ಲಿ ಸಹಾಯ ಮಾಡಬಹುದು?"
             ),
         }
-        message = messages.get((language or "").lower(), messages["english"])
+        message = messages.get(userdata.preferred_language, messages["english"])
         await self.session.say(message)
+
+    @function_tool()
+    async def set_language(
+            self,
+            language: Annotated[str, Field(description="User's preferred language: english or kannada")]
+    ) -> str:
+        """Store the user's preferred language in session userdata."""
+        userdata = self.session.userdata
+        userdata.preferred_language = language.lower()
+        userdata.language_selected = True
+
+        if userdata.preferred_language == "kannada":
+            return "ಸರಿ, ನಾವು ಕನ್ನಡದಲ್ಲಿ ಮುಂದುವರೆಯೋಣ."
+        return "Okay, we'll continue in English."
 
     @function_tool()
     async def to_contact_form(self) -> str:
@@ -105,7 +122,7 @@ class GreeterAgent(BaseAgent):
             topic="navigation"
         )
 
-        return await self._transfer_to_agent("felling")
+        return await self._transfer_to_agent("felling", language=userdata.preferred_language or "english")
 
     @function_tool()
     async def detect_intent(

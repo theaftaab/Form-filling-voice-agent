@@ -53,7 +53,7 @@ class BaseAgent(Agent):
         )
         await self.update_chat_ctx(chat_ctx)
 
-    async def _transfer_to_agent(self, name: str) -> Tuple[Agent, str]:
+    async def _transfer_to_agent(self, name: str, **kwargs) -> Tuple[Agent, str]:
         """
         Utility to transfer control to another agent by name.
         """
