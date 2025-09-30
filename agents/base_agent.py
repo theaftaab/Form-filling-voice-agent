@@ -69,6 +69,11 @@ class BaseAgent(Agent):
         return await self._transfer_to_agent("greeter")
 
     @function_tool()
+    async def to_greeter(self) -> tuple:
+        """Called when user asks any unrelated questions or wants to go back to main menu."""
+        return await self._transfer_to_agent("greeter")
+
+    @function_tool()
     async def set_language(
         self,
         language: Annotated[str, Field(description="The user's preferred language: english or kannada")],
@@ -92,34 +97,58 @@ class BaseAgent(Agent):
             return "ಧನ್ಯವಾದಗಳು! ನಿಮ್ಮ ಮಾಹಿತಿಯನ್ನು ನಾನು ಸಂಗ್ರಹಿಸುತ್ತೇನೆ."
         else:
             return "Thank you! I'll help you fill out the form."
+    # async def switch_agent(self, name: str):
+    #         """
+    #         Safely switch to another agent by name.
+    #         - Stops current activity
+    #         - Starts new agent cleanly
+    #         """
+    #         userdata = self.session.userdata
+    #         next_agent = userdata.agents[name]
+    #
+    #         # Stop current activity if one is running
+    #         try:
+    #             await self.session.stop_activity()
+    #         except Exception as e:
+    #             logger.warning(f"No activity to stop before switching: {e}")
+    #
+    #         # Track previous agent for context stitching
+    #         userdata.prev_agent = self
+    #
+    #         # Start the new agent
+    #         await self.session.start(
+    #             agent=next_agent,
+    #             room=userdata.ctx.room
+    #         )
+    #         # if isinstance(next_agent, BaseFormAgent) and userdata.language_selected:
+    #         #     await next_agent._start_form_collection()
+    #
+    #         return next_agent, f"Switched to {name}."
     async def switch_agent(self, name: str):
-            """
-            Safely switch to another agent by name.
-            - Stops current activity
-            - Starts new agent cleanly
-            """
-            userdata = self.session.userdata
-            next_agent = userdata.agents[name]
+        """
+        Safely switch to another agent by name.
+        """
+        userdata = self.session.userdata
+        next_agent = userdata.agents[name]
 
-            # Stop current activity if one is running
-            try:
-                await self.session.stop_activity()
-            except Exception as e:
-                logger.warning(f"No activity to stop before switching: {e}")
+        # Track previous agent for context stitching
+        userdata.prev_agent = self
 
-            # Track previous agent for context stitching
-            userdata.prev_agent = self
+        try:
+            # End the current agent cleanly if possible
+            if hasattr(self.session, "end"):
+                await self.session.end()  # gracefully end this agent
+            else:
+                logger.warning("No session.end() available, skipping cleanup")
 
-            # Start the new agent
-            await self.session.start(
-                agent=next_agent,
-                room=userdata.ctx.room
-            )
-            if isinstance(next_agent, BaseFormAgent) and userdata.language_selected:
-                await next_agent._start_form_collection()
+            # Start the new agent in the same room
+            await self.session.start(agent=next_agent, room=userdata.ctx.room)
+            logger.info(f"✅ Switched to {name}")
+        except Exception as e:
+            logger.error(f"Agent switch to {name} failed: {e}")
+            raise
 
-            return next_agent, f"Switched to {name}."
-
+        return next_agent, f"Switched to {name}."
 
 # -------------------------------------------------------------------
 # BaseFormAgent

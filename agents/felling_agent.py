@@ -8,7 +8,7 @@ from typing import Annotated
 from livekit.agents.llm import function_tool
 from livekit.plugins import openai
 from pydantic import Field
-
+from livekit.plugins import soniox
 from agents.base_agent import BaseFormAgent
 from utils.frontend import send_to_frontend
 
@@ -20,22 +20,96 @@ class FellingFormAgent(BaseFormAgent):
     Conversational agent for Tree Felling Permission Form.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, language: str = "en") -> None:
         super().__init__(
             instructions=(
-                "You are a voice assistant for the Karnataka Forest Department Felling Transit Permission form. "
-                "Collect information step by step in this order:\n"
-                "Section 1 (Location): in_area_type, district, taluk, village, khata_number, survey_number, "
-                "total_extent_acres, guntas, anna. \n"
-                "Section 2 (Applicant): applicant_type, applicant_name, father_name, address, applicant_district, "
-                "applicant_taluk, pincode, mobile_number, email_id. \n"
-                "Section 3 (Tree details): tree_species, tree_age, tree_girth. \n"
-                "Section 4 (Site boundary): east, west, north, south. \n"
-                "Section 5 (Other details): purpose_of_felling, boundary_demarcated, tree_reserved_to_gov, "
-                "unconditional_consent, license_enclosed. \n"
-                "Finally: agree_terms. After collecting all fields, ask for confirmation and call confirm_and_submit_felling_form()."
+                # English rules
+                "You are a form-filling assistant for the Karnataka Forest Department Tree Felling Permission form. "
+                "You MUST collect information strictly one field at a time using the provided tool functions. "
+                "Never skip fields, never summarize prematurely, and never ask for multiple fields together. "
+                "The exact order is:\n"
+                "1. in_area_type → district → taluk → village → khata_number → survey_number → total_extent_acres → guntas → anna\n"
+                "2. applicant_type → applicant_name → father_name → address → applicant_district → applicant_taluk → pincode → mobile_number → email_id\n"
+                "3. tree_species → tree_age → tree_girth\n"
+                "4. east → west → north → south\n"
+                "5. purpose_of_felling → boundary_demarcated → tree_reserved_to_gov → unconditional_consent → license_enclosed → agree_terms\n"
+                "At the end, always call confirm_and_submit_felling_form(). "
+                "⚠️ Never jump ahead. Always wait for user input before moving to the next field.\n\n"
+
+                # Kannada rules
+                "ನೀವು ಕರ್ನಾಟಕ ಅರಣ್ಯ ಇಲಾಖೆಯ ಮರ ಕಡಿಯುವ ಅನುಮತಿ ಫಾರ್ಮ್ ಅನ್ನು ಭರ್ತಿ ಮಾಡಲು ಸಹಾಯ ಮಾಡುವ ಸಹಾಯಕನಾಗಿದ್ದೀರಿ. "
+                "ಪ್ರತಿ ಹಂತವನ್ನು ಒಂದೊಂದು ಬಾರಿ ಮಾತ್ರ ಕೇಳಬೇಕು. "
+                "ಒಂದೇ ಸಮಯದಲ್ಲಿ ಹಲವಾರು ಪ್ರಶ್ನೆಗಳನ್ನು ಕೇಳಬಾರದು, ಯಾವುದನ್ನೂ ಬಿಡಬಾರದು. "
+                "ಕಡ್ಡಾಯ ಕ್ರಮ:\n"
+                "1. ಪ್ರದೇಶದ ಪ್ರಕಾರ → ಜಿಲ್ಲೆ → ತಾಲೂಕು → ಗ್ರಾಮ → ಖಾತೆ ಸಂಖ್ಯೆ → ಸರ್ವೇ ಸಂಖ್ಯೆ → ಒಟ್ಟು ಎಕರೆ → ಗುಂಟೆ → ಅಣ್ಣಾ\n"
+                "2. ಅರ್ಜಿದಾರರ ಪ್ರಕಾರ → ಅರ್ಜಿದಾರರ ಹೆಸರು → ತಂದೆಯ ಹೆಸರು → ವಿಳಾಸ → ಅರ್ಜಿದಾರರ ಜಿಲ್ಲೆ → ಅರ್ಜಿದಾರರ ತಾಲೂಕು → ಪಿನ್ ಕೋಡ್ → ಮೊಬೈಲ್ ಸಂಖ್ಯೆ → ಇಮೇಲ್ ಐಡಿ\n"
+                "3. ಮರದ ಪ್ರಭೇದ → ಮರದ ವಯಸ್ಸು → ಮರದ ಸುತ್ತಳತೆ\n"
+                "4. ಪೂರ್ವ ಗಡಿ → ಪಶ್ಚಿಮ ಗಡಿ → ಉತ್ತರ ಗಡಿ → ದಕ್ಷಿಣ ಗಡಿ\n"
+                "5. ಕಡಿಯುವ ಉದ್ದೇಶ → ಗಡಿ ಗುರುತು ಮಾಡಿದ್ದೀರಾ → ಮರ ಸರ್ಕಾರಕ್ಕೆ ಮೀಸಲಾಗಿದೆಯೇ → ನಿರ್ವಿಘ್ನ ಅನುಮತಿ → ಪರವಾನಗಿ ಲಗತ್ತಿಸಿದ್ದೀರಾ → ನಿಯಮ/ಷರತ್ತುಗಳನ್ನು ಒಪ್ಪುತ್ತೀರಾ\n"
+                "ಕೊನೆಯಲ್ಲಿ ಸದಾ confirm_and_submit_felling_form() ಅನ್ನು ಕರೆ ಮಾಡಬೇಕು. "
+                "⚠️ ಪ್ರತಿ ಹಂತಕ್ಕೆ ಬಳಕೆದಾರರ ಉತ್ತರ ಬಂದ ಬಳಿಕ ಮಾತ್ರ ಮುಂದಿನ ಹಂತಕ್ಕೆ ಹೋಗಿ."
             ),
-        )
+            stt=soniox.STT(params=soniox.STTOptions(
+                language_hints=[language],
+                context=(
+                    "Karnataka Forest Department Tree Felling Permission Form. "
+                    "This is a structured form-filling assistant. "
+                    "The user will provide **one field at a time** in either Kannada or English. "
+                    "Expected field types:\n"
+                    "- Location: district, taluk, village, khata number, survey number. "
+                    "- Land size: acres, guntas, anna. "
+                    "- Applicant details: applicant type (individual/institution), name, father name, address, pincode. "
+                    "- Contact details: mobile number (spoken as digits or words), email ID (e.g., gmail.com, yahoo.com, outlook.com). "
+                    "- Tree details: species (teak, rosewood, neem, honge, etc.), tree age (in years), tree girth (in cm). "
+                    "- Boundaries: east, west, north, south. "
+                    "- Other: purpose of felling, boundary demarcated (yes/no), reserved to govt (yes/no), unconditional consent (yes/no), license enclosed (yes/no), agree to terms (yes/no).\n\n"
+
+                    "⚠️ Rules for recognition:\n"
+                    "1. Always return numbers as **digits**, not words (e.g., 'ಎಂಟು' or 'eight' → '8'). "
+                    "2. For phone numbers, output as continuous digits without spaces. "
+                    "3. For pincodes, output as exactly 6 digits. "
+                    "4. For khata/survey numbers, preserve alphanumeric values exactly. "
+                    "5. For email IDs, capture them literally (e.g., 'example at gmail dot com' → 'example@gmail.com'). "
+                    "6. Recognize common Kannada/English synonyms: "
+                    "   - acres → ಏಕರೆ, guntas → ಗುಂಟೆ, anna → ಅಣ್ಣಾ. "
+                    "   - pincode → ಪಿನ್ ಕೋಡ್, khata → ಖಾತೆ, survey → ಸರ್ವೇ. "
+                    "7. Do not summarize — transcribe exactly what was spoken. "
+                    "8. This is not open conversation, it is **form data capture**. "
+                    "9. Prioritize Kannada legal/administrative terms when spoken.\n\n"
+
+                    "Bias phrases: khata number, survey number, pincode, applicant type, mobile number, email ID, "
+                    "tree species, acres, guntas, anna, boundary demarcated, unconditional consent, reserved to government."
+                    "ಕರ್ನಾಟಕ ಅರಣ್ಯ ಇಲಾಖೆಯ ವೃಕ್ಷ ಕಡಿಯುವ ಅನುಮತಿ ಫಾರ್ಮ್. "
+                    "ಇದು ಒಂದು ಸಂಯೋಜಿತ (structured) ಫಾರ್ಮ್-ಫಿಲ್ಲಿಂಗ್ ಸಹಾಯಕ. "
+                    "ಬಳಕೆದಾರರು **ಒಂದೇ ಸಮಯದಲ್ಲಿ ಒಂದು ಕ್ಷೇತ್ರ (field)** ಅನ್ನು ಕನ್ನಡ ಅಥವಾ ಇಂಗ್ಲಿಷ್‌ನಲ್ಲಿ ಒದಗಿಸುತ್ತಾರೆ. "
+                    "ನಿರೀಕ್ಷಿಸಲಾದ ಕ್ಷೇತ್ರಗಳ ಪ್ರಕಾರ:\n"
+                    "- ಸ್ಥಳ: ಜಿಲ್ಲೆ, ತಾಲೂಕು, ಗ್ರಾಮ, ಖಾತೆ ಸಂಖ್ಯೆ, ಸರ್ವೇ ಸಂಖ್ಯೆ. "
+                    "- ಭೂಮಿಯ ಗಾತ್ರ: ಎಕರೆ, ಗುಂಟೆ, ಅಣ್ಣಾ. "
+                    "- ಅರ್ಜಿದಾರರ ವಿವರಗಳು: ಅರ್ಜಿದಾರರ ಪ್ರಕಾರ (ವೈಯಕ್ತಿಕ/ಸಂಸ್ಥೆ), ಹೆಸರು, ತಂದೆಯ ಹೆಸರು, ವಿಳಾಸ, ಪಿನ್‌ಕೋಡ್. "
+                    "- ಸಂಪರ್ಕ ವಿವರಗಳು: ಮೊಬೈಲ್ ಸಂಖ್ಯೆ (ಅಂಕೆಗಳಾಗಿ ಅಥವಾ ಪದಗಳಲ್ಲಿ), ಇಮೇಲ್ ಐಡಿ (ಉದಾ: gmail.com, yahoo.com, outlook.com). "
+                    "- ಮರದ ವಿವರಗಳು: ಪ್ರಭೇದಗಳು (ಟೀಕ್, ರೋಸ್‌ವುಡ್, ಬೇವು, ಹೊಂಗೆ ಇತ್ಯಾದಿ), ಮರದ ವಯಸ್ಸು (ವರ್ಷಗಳಲ್ಲಿ), ಮರದ ಸುತ್ತಳತೆ (ಸೆಂ.ಮೀ.). "
+                    "- ಗಡಿಗಳು: ಪೂರ್ವ, ಪಶ್ಚಿಮ, ಉತ್ತರ, ದಕ್ಷಿಣ. "
+                    "- ಇತರೆ: ಕಡಿಯುವ ಉದ್ದೇಶ, ಗಡಿ ಗುರುತು ಮಾಡಿದ್ದೀರಾ (ಹೌದು/ಇಲ್ಲ), ಸರ್ಕಾರಕ್ಕೆ ಮೀಸಲಾಗಿದೆಯೇ (ಹೌದು/ಇಲ್ಲ), ನಿರ್ವಿಘ್ನ ಅನುಮತಿ (ಹೌದು/ಇಲ್ಲ), ಪರವಾನಗಿ ಲಗತ್ತಿಸಿದ್ದೀರಾ (ಹೌದು/ಇಲ್ಲ), ನಿಯಮ/ಷರತ್ತುಗಳನ್ನು ಒಪ್ಪುತ್ತೀರಾ (ಹೌದು/ಇಲ್ಲ).\n\n"
+
+                    "⚠️ ಗುರುತಿಸುವ ನಿಯಮಗಳು:\n"
+                    "1. ಯಾವಾಗಲೂ ಸಂಖ್ಯೆಗಳನ್ನು **ಅಂಕೆಗಳಾಗಿ** (digits) ಹಿಂತಿರುಗಿಸಿ, ಪದಗಳಾಗಿ ಬೇಡ (ಉದಾ: 'ಎಂಟು' ಅಥವಾ 'eight' → '8'). "
+                    "2. ಮೊಬೈಲ್ ಸಂಖ್ಯೆಗಳು — ಯಾವುದೇ ಖಾಲಿ ಜಾಗವಿಲ್ಲದೆ ನಿರಂತರ ಅಂಕೆಗಳಾಗಿ ಬರೆಯಬೇಕು. "
+                    "3. ಪಿನ್‌ಕೋಡ್ — ಕಡ್ಡಾಯವಾಗಿ 6 ಅಂಕೆಗಳಾಗಿರಬೇಕು. "
+                    "4. ಖಾತೆ/ಸರ್ವೇ ಸಂಖ್ಯೆ — ಅಕ್ಷರ-ಅಂಕೆ (alphanumeric) ಮೌಲ್ಯವನ್ನು ಅಚ್ಚುಕಟ್ಟಾಗಿ ಉಳಿಸಬೇಕು. "
+                    "5. ಇಮೇಲ್ ಐಡಿಗಳು — ಶಬ್ದರೂಪವನ್ನು ನೇರವಾಗಿ ಸೆರೆಹಿಡಿಯಿರಿ (ಉದಾ: 'example at gmail dot com' → 'example@gmail.com'). "
+                    "6. ಸಾಮಾನ್ಯ ಕನ್ನಡ/ಇಂಗ್ಲಿಷ್ ಸಮಾನಾರ್ಥಕ ಪದಗಳನ್ನು ಗುರುತಿಸಬೇಕು: "
+                    "   - ಎಕರೆ → acres, ಗುಂಟೆ → guntas, ಅಣ್ಣಾ → anna. "
+                    "   - ಪಿನ್ ಕೋಡ್ → pincode, ಖಾತೆ → khata, ಸರ್ವೇ → survey. "
+                    "7. ಸಾರಾಂಶ ಮಾಡಬೇಡಿ — ನಿಖರವಾಗಿ ಮಾತನಾಡಿದುದನ್ನು ಬರೆಯಿರಿ. "
+                    "8. ಇದು ಮುಕ್ತ ಸಂಭಾಷಣೆ ಅಲ್ಲ, ಇದು **ಫಾರ್ಮ್ ಡೇಟಾ ಸೆರೆಹಿಡಿಯುವ ಪ್ರಕ್ರಿಯೆ**. "
+                    "9. ಬಳಸಿದರೆ ಕನ್ನಡದ ಕಾನೂನು/ನಿರ್ವಹಣಾ ಪದಗಳಿಗೆ ಹೆಚ್ಚಿನ ಆದ್ಯತೆ ನೀಡಿ.\n\n"
+
+                    "ಭೇದಗೊಳಿಸಬೇಕಾದ ಪದಗಳು (Bias phrases): ಖಾತೆ ಸಂಖ್ಯೆ, ಸರ್ವೇ ಸಂಖ್ಯೆ, ಪಿನ್‌ಕೋಡ್, ಅರ್ಜಿದಾರರ ಪ್ರಕಾರ, ಮೊಬೈಲ್ ಸಂಖ್ಯೆ, ಇಮೇಲ್ ಐಡಿ, "
+                    "ಮರದ ಪ್ರಭೇದ, ಎಕರೆ, ಗುಂಟೆ, ಅಣ್ಣಾ, ಗಡಿ ಗುರುತು, ನಿರ್ವಿಘ್ನ ಅನುಮತಿ, ಸರ್ಕಾರಕ್ಕೆ ಮೀಸಲು."
+                )
+            ),
+            ))
+        
 
     async def on_enter(self):
         await super().on_enter()
@@ -45,12 +119,16 @@ class FellingFormAgent(BaseFormAgent):
         # 🚀 Always start the form flow
         await self._start_form_collection()
 
+
+
     async def _start_form_collection(self):
         userdata = self.session.userdata
         if userdata.preferred_language == "kannada":
-            await self.session.say("ನಮಸ್ಕಾರ! ವೃಕ್ಷ ಕಡಿಯುವ ಅನುಮತಿ ಫಾರ್ಮ್‌ಗಾಗಿ ನಿಮಗೆ ಸಹಾಯ ಮಾಡುತ್ತೇನೆ. ದಯವಿಟ್ಟು ಸ್ಥಳದ ಪ್ರಕಾರವನ್ನು ಹೇಳಿ (ಉದಾ: ಅರಣ್ಯ, ಖಾಸಗಿ ಭೂಮಿ, ಆದಾಯ ಭೂಮಿ).")
+            await self.session.say(
+                "ನಮಸ್ಕಾರ! ವೃಕ್ಷ ಕಡಿಯುವ ಅನುಮತಿ ಫಾರ್ಮ್‌ಗಾಗಿ ನಿಮಗೆ ಸಹಾಯ ಮಾಡುತ್ತೇನೆ. ದಯವಿಟ್ಟು ಸ್ಥಳದ ಪ್ರಕಾರವನ್ನು ಹೇಳಿ (ಉದಾ: ಅರಣ್ಯ, ಖಾಸಗಿ ಭೂಮಿ, ಆದಾಯ ಭೂಮಿ).")
         else:
-            await self.session.say("Hello! I'll help you with the Tree Felling Permission form. Please tell me the type of area (e.g., forest, private land, revenue land).")
+            await self.session.say(
+                "Hello! I'll help you with the Tree Felling Permission form. Please tell me the type of area (e.g., forest, private land, revenue land).")
 
     # ---------------- Section 1: Location ----------------
 
@@ -97,7 +175,8 @@ class FellingFormAgent(BaseFormAgent):
         return "ಒಟ್ಟು ಎಕರೆ ಎಷ್ಟು?" if userdata.preferred_language == "kannada" else "What is the total extent in acres?"
 
     @function_tool()
-    async def update_total_extent_acres(self, acres: Annotated[str, Field(description="Total extent in acres")]) -> str:
+    async def update_total_extent_acres(self,
+                                        acres: Annotated[str, Field(description="Total extent in acres")]) -> str:
         userdata = self.session.userdata
         userdata.felling_form.total_extent_acres = acres
         await send_to_frontend(userdata.ctx.room, {"total_extent_acres": acres}, topic="formUpdate")
@@ -120,7 +199,8 @@ class FellingFormAgent(BaseFormAgent):
     # ---------------- Section 2: Applicant ----------------
 
     @function_tool()
-    async def update_applicant_type(self, applicant_type: Annotated[str, Field(description="Applicant type")]) -> str:
+    async def update_applicant_type(self,
+                                    applicant_type: Annotated[str, Field(description="Applicant type")]) -> str:
         userdata = self.session.userdata
         userdata.felling_form.applicant_type = applicant_type
         await send_to_frontend(userdata.ctx.room, {"applicant_type": applicant_type}, topic="formUpdate")
@@ -148,14 +228,16 @@ class FellingFormAgent(BaseFormAgent):
         return "ಅರ್ಜಿದಾರರ ಜಿಲ್ಲೆ ಯಾವುದು?" if userdata.preferred_language == "kannada" else "Which is your applicant district?"
 
     @function_tool()
-    async def update_applicant_district(self, applicant_district: Annotated[str, Field(description="Applicant district")]) -> str:
+    async def update_applicant_district(self, applicant_district: Annotated[
+        str, Field(description="Applicant district")]) -> str:
         userdata = self.session.userdata
         userdata.felling_form.applicant_district = applicant_district
         await send_to_frontend(userdata.ctx.room, {"applicant_district": applicant_district}, topic="formUpdate")
         return "ಅರ್ಜಿದಾರರ ತಾಲೂಕು ಯಾವುದು?" if userdata.preferred_language == "kannada" else "Which is your applicant taluk?"
 
     @function_tool()
-    async def update_applicant_taluk(self, applicant_taluk: Annotated[str, Field(description="Applicant taluk")]) -> str:
+    async def update_applicant_taluk(self,
+                                     applicant_taluk: Annotated[str, Field(description="Applicant taluk")]) -> str:
         userdata = self.session.userdata
         userdata.felling_form.applicant_taluk = applicant_taluk
         await send_to_frontend(userdata.ctx.room, {"applicant_taluk": applicant_taluk}, topic="formUpdate")
@@ -238,28 +320,32 @@ class FellingFormAgent(BaseFormAgent):
     # ---------------- Section 5: Other details ----------------
 
     @function_tool()
-    async def update_purpose_of_felling(self, purpose: Annotated[str, Field(description="Purpose of felling")]) -> str:
+    async def update_purpose_of_felling(self,
+                                        purpose: Annotated[str, Field(description="Purpose of felling")]) -> str:
         userdata = self.session.userdata
         userdata.felling_form.purpose_of_felling = purpose
         await send_to_frontend(userdata.ctx.room, {"purpose_of_felling": purpose}, topic="formUpdate")
         return "ಭೂಮಿಯ ಗಡಿ ಗುರುತು ಮಾಡಿದ್ದೀರಾ?" if userdata.preferred_language == "kannada" else "Is the boundary demarcated?"
 
     @function_tool()
-    async def update_boundary_demarcated(self, val: Annotated[str, Field(description="Boundary demarcated (Yes/No)")]) -> str:
+    async def update_boundary_demarcated(self, val: Annotated[
+        str, Field(description="Boundary demarcated (Yes/No)")]) -> str:
         userdata = self.session.userdata
         userdata.felling_form.boundary_demarcated = val
         await send_to_frontend(userdata.ctx.room, {"boundary_demarcated": val}, topic="formUpdate")
         return "ಮರ ಸರ್ಕಾರಕ್ಕೆ ಮೀಸಲಾಗಿದೆಯೇ?" if userdata.preferred_language == "kannada" else "Is the tree reserved to government?"
 
     @function_tool()
-    async def update_tree_reserved_to_gov(self, val: Annotated[str, Field(description="Tree reserved to govt?")]) -> str:
+    async def update_tree_reserved_to_gov(self,
+                                          val: Annotated[str, Field(description="Tree reserved to govt?")]) -> str:
         userdata = self.session.userdata
         userdata.felling_form.tree_reserved_to_gov = val
         await send_to_frontend(userdata.ctx.room, {"tree_reserved_to_gov": val}, topic="formUpdate")
         return "ನಿರ್ವಿಘ್ನ ಅನುಮತಿ ಇದೆಯೇ?" if userdata.preferred_language == "kannada" else "Is unconditional consent given?"
 
     @function_tool()
-    async def update_unconditional_consent(self, val: Annotated[str, Field(description="Unconditional consent?")]) -> str:
+    async def update_unconditional_consent(self,
+                                           val: Annotated[str, Field(description="Unconditional consent?")]) -> str:
         userdata = self.session.userdata
         userdata.felling_form.unconditional_consent = val
         await send_to_frontend(userdata.ctx.room, {"unconditional_consent": val}, topic="formUpdate")
