@@ -1,7 +1,7 @@
 import os
 import logging
 from dotenv import load_dotenv
-from livekit.plugins import openai, soniox, elevenlabs
+from livekit.plugins import openai, soniox, elevenlabs, groq
 
 print("Loading .env file...")
 load_dotenv()
@@ -31,6 +31,7 @@ ELEVENLABS_MODEL_ID = os.getenv("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
 # ------------------------------------------------------
 
 DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "gpt-4o-mini")
+TEST_LLM_MODEL = os.getenv("TEST_LLM_MODEL", "gpt-4o-mini")
 SUPPORTED_LANGUAGES = ["english", "kannada"]
 
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
@@ -44,7 +45,8 @@ os.makedirs(LOG_DIR, exist_ok=True)
 # Default Plugins (LLM, STT, TTS)
 # ------------------------------------------------------
 
-DEFAULT_LLM = openai.LLM(model=DEFAULT_LLM_MODEL)
+DEFAULT_LLM = openai.LLM(model=DEFAULT_LLM_MODEL,temperature=0)
+TEST_LLM = groq.LLM(model=TEST_LLM_MODEL,temperature=0)
 
 DEFAULT_STT = soniox.STT(
     params=soniox.STTOptions(
