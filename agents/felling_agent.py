@@ -11,7 +11,7 @@ from pydantic import Field
 from livekit.plugins import soniox
 from agents.base_agent import BaseFormAgent
 from utils.frontend import send_to_frontend
-
+import regex as re
 logger = logging.getLogger(__name__)
 
 
@@ -160,12 +160,38 @@ class FellingFormAgent(BaseFormAgent):
         await send_to_frontend(userdata.ctx.room, {"village": village}, topic="formUpdate")
         return "ಖಾತೆ ಸಂಖ್ಯೆ ಏನು?" if userdata.preferred_language == "kannada" else "What is the Khata number?"
 
+
     @function_tool()
-    async def update_khata_number(self, khata_number: Annotated[str, Field(description="Khata number")]) -> str:
+    async def update_khata_number(
+            self,
+            khata_number: Annotated[str, Field(description="Khata number, must be numeric only")]
+    ) -> str:
+        """Validate and store khata number (only digits allowed)."""
         userdata = self.session.userdata
-        userdata.felling_form.khata_number = khata_number
-        await send_to_frontend(userdata.ctx.room, {"khata_number": khata_number}, topic="formUpdate")
-        return "ಸರ್ವೇ ಸಂಖ್ಯೆ ಏನು?" if userdata.preferred_language == "kannada" else "What is the survey number?"
+
+        # ✅ Strip whitespace
+        khata_number_clean = khata_number.strip()
+
+        # ✅ Enforce numeric only
+        if not re.fullmatch(r"\d+", khata_number_clean):
+            if userdata.preferred_language == "kannada":
+                return "ದಯವಿಟ್ಟು ಅಂಕೆಗಳಲ್ಲೇ ಖಾತಾ ಸಂಖ್ಯೆ ನಮೂದಿಸಿ (ಉದಾ: 12345)."
+            return "Please enter a valid numeric Khata number (e.g., 12345)."
+
+        # ✅ Store in userdata
+        userdata.felling_form.khata_number = khata_number_clean
+
+        # ✅ Notify frontend
+        await send_to_frontend(
+            userdata.ctx.room,
+            {"khata_number": khata_number_clean},
+            topic="formUpdate"
+        )
+
+        # ✅ Next step
+        if userdata.preferred_language == "kannada":
+            return "ಸರ್ವೇ ಸಂಖ್ಯೆ ಏನು?"
+        return "What is the survey number?"
 
     @function_tool()
     async def update_survey_number(self, survey_number: Annotated[str, Field(description="Survey number")]) -> str:
@@ -258,11 +284,37 @@ class FellingFormAgent(BaseFormAgent):
         return "ನಿಮ್ಮ ಇಮೇಲ್ ಐಡಿ ಏನು?" if userdata.preferred_language == "kannada" else "What is your email ID?"
 
     @function_tool()
-    async def update_email_id(self, email: Annotated[str, Field(description="Email ID")]) -> str:
+    async def update_email_id(
+            self,
+            email: Annotated[str, Field(description="Email ID provided by the user")]
+    ) -> str:
+        """Validate, store, and confirm user's email ID"""
         userdata = self.session.userdata
-        userdata.felling_form.email_id = email
-        await send_to_frontend(userdata.ctx.room, {"email_id": email}, topic="formUpdate")
-        return "ಯಾವ ಮರವನ್ನು ಕಡಿಯಲು ಬಯಸುತ್ತೀರಿ?" if userdata.preferred_language == "kannada" else "What tree species do you want to fell?"
+
+        # ✅ Clean up input
+        email_clean = email.strip()
+
+        # ✅ Basic email regex check
+        email_pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
+        if not re.match(email_pattern, email_clean):
+            if userdata.preferred_language == "kannada":
+                return "ದಯವಿಟ್ಟು ಮಾನ್ಯವಾದ ಇಮೇಲ್ ವಿಳಾಸವನ್ನು ನಮೂದಿಸಿ."
+            return "Please provide a valid email address."
+
+        # ✅ Store in userdata
+        userdata.felling_form.email_id = email_clean
+
+        # ✅ Notify frontend
+        await send_to_frontend(
+            userdata.ctx.room,
+            {"email_id": email_clean},
+            topic="formUpdate"
+        )
+
+        # ✅ Confirm back to user + next prompt
+        if userdata.preferred_language == "kannada":
+            return f"ನಿಮ್ಮ ಇಮೇಲ್ ವಿಳಾಸ {email_clean} ಉಳಿಸಲಾಗಿದೆ. ಯಾವ ಮರವನ್ನು ಕಡಿಯಲು ಬಯಸುತ್ತೀರಿ?"
+        return f"Your email {email_clean} has been saved. What tree species do you want to fell?"
 
     # ---------------- Section 3: Tree details ----------------
 
