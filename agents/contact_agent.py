@@ -31,8 +31,8 @@ class ContactFormAgent(BaseFormAgent):
                 "4. Message/inquiry details "
                 "After collecting all fields, ask for confirmation and then call confirm_and_submit_contact_form(). "
             ),
-            llm=openai.LLM(model="gpt-4o-mini"),
-            tts=openai.TTS(voice="alloy"),
+            # llm=openai.LLM(model="gpt-4o-mini"),
+            # tts=openai.TTS(voice="alloy"),
             # tools=[
             #     self.to_greeter,
             #     self.set_language,

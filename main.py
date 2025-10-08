@@ -7,9 +7,9 @@ from models.userdata import UserData
 from livekit.agents import JobContext, JobProcess, WorkerOptions, cli
 from livekit.agents.voice import AgentSession
 from livekit.agents.voice.room_io import RoomInputOptions
-from livekit.plugins import openai, silero, soniox
+from livekit.plugins import openai, silero, soniox, elevenlabs
 from livekit import rtc
-
+from config.settings import logger, DEFAULT_LLM, DEFAULT_STT, DEFAULT_TTS
 
 def extract_agent_type_from_room_name(room_name: str) -> str:
     """Extract agent type from room name that contains __agent=type"""
@@ -82,12 +82,13 @@ async def entrypoint(ctx: JobContext):
             # Default to greeter for intent detection
             selected_agent = agents["greeter"]
 
+         
         # Create session with proper configuration
         session = AgentSession[UserData](
             userdata=userdata,
-            llm=openai.LLM(model="gpt-4o-mini"),
-            stt=soniox.STT(params=initial_soniox_options),
-            tts=openai.TTS(voice="alloy"),
+            llm=DEFAULT_LLM,
+            stt=DEFAULT_STT,
+            tts=DEFAULT_TTS,
             vad=vad,
             turn_detection="vad",
             max_tool_steps=5,

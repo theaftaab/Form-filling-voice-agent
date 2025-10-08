@@ -8,7 +8,8 @@ from typing import Annotated
 from livekit.agents.llm import function_tool
 from livekit.plugins import openai
 from pydantic import Field
-
+import json
+from livekit.agents.llm import LLM, ChatMessage
 from agents.base_agent import BaseAgent
 from utils.frontend import send_to_frontend
 
@@ -33,7 +34,7 @@ class GreeterAgent(BaseAgent):
                 "Always be conversational and helpful, not mechanical."
             ),
             llm=openai.LLM(model="gpt-4o-mini", parallel_tool_calls=False),
-            tts=openai.TTS(voice="alloy"),
+            # tts=openai.TTS(voice="alloy"),
             # tools=[
             #     self.set_language,
             #     self.to_contact_form,
@@ -49,7 +50,7 @@ class GreeterAgent(BaseAgent):
 
         if not userdata.language_selected:
             await self.session.say(
-                "Hello! I'm here to help you with Karnataka Government services. "
+                "Hello! I'm here to help you with Karnataka Forest services. "
                 "Would you prefer to continue in English or Kannada?"
             )
         else:
@@ -57,6 +58,9 @@ class GreeterAgent(BaseAgent):
 
     async def _ask_for_service_intent(self, language):
         """Ask what service the user needs"""
+        userdata = self.session.userdata
+        userdata.preferred_language = (language or "english").lower()  # ✅ persist
+
         messages = {
             "english": (
                 "Great! How can I help you today? Just tell me what you need - "
@@ -64,29 +68,46 @@ class GreeterAgent(BaseAgent):
                 "What brings you here?"
             ),
             "kannada": (
-                "ಚೆನ್ನಾಗಿದೆ! ನಾನು ಇಂದು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು? "
-                "ನಿಮಗೆ ಏನು ಬೇಕು ಎಂದು ಹೇಳಿ - ಸಾಮಾನ್ಯ ವಿಚಾರಣೆ, ದೂರು, ಅಥವಾ ಮರ ಕಡಿಯುವ ಅನುಮತಿ. "
-                "ನೀವು ಇಲ್ಲಿಗೆ ಏಕೆ ಬಂದಿದ್ದೀರಿ?"
+                "ಇಂದು ನಾನು ನಿಮಗೆ ಯಾವ ರೀತಿಯಲ್ಲಿ ಸಹಾಯ ಮಾಡಬಹುದು?"
             ),
         }
-        message = messages.get((language or "").lower(), messages["english"])
+        message = messages.get(userdata.preferred_language, messages["english"])
         await self.session.say(message)
 
     @function_tool()
-    async def to_contact_form(self) -> tuple:
+    async def set_language(
+            self,
+            language: Annotated[str, Field(description="User's preferred language: english or kannada")]
+    ) -> str:
+        """Store the user's preferred language in session userdata."""
+        userdata = self.session.userdata
+        userdata.preferred_language = language.lower()
+        userdata.language_selected = True
+
+        if userdata.preferred_language == "kannada":
+            return "ಸರಿ, ನಾವು ಕನ್ನಡದಲ್ಲಿ ಮುಂದುವರೆಯೋಣ."
+        return "Okay, we'll continue in English."
+
+    @function_tool()
+    async def to_contact_form(self) -> str:
         """Called when user wants to fill a contact form for general inquiries."""
         userdata = self.session.userdata
         userdata.requested_route = "/contact-form"
 
-        # ✅ Correct send_to_frontend usage
+        # ✅ Send route update to frontend
         await send_to_frontend(
             userdata.ctx.room,
             {"route": userdata.requested_route},
             topic="navigation"
         )
 
-        return await self._transfer_to_agent("contact")
-        # same for felling
+        # ✅ Switch agent
+        await self.switch_agent("contact")
+
+        # ✅ Return a message (not the tuple)
+        if userdata.preferred_language == "kannada":
+            return "ಸರಿ, ನಾನು ನಿಮಗೆ ಸಂಪರ್ಕ ಫಾರ್ಮ್ ಭರ್ತಿ ಮಾಡಲು ಸಹಾಯ ಮಾಡುತ್ತೇನೆ."
+        return "Okay, let me switch you to the contact form."
 
     @function_tool()
     async def to_felling_form(self) -> tuple:
@@ -101,47 +122,48 @@ class GreeterAgent(BaseAgent):
             topic="navigation"
         )
 
-        return await self._transfer_to_agent("felling")
+        return await self._transfer_to_agent("felling", language=userdata.preferred_language or "english")
 
     @function_tool()
     async def detect_intent(
-        self,
-        user_request: Annotated[str, Field(description="What the user is asking for or needs help with")],
+            self,
+            user_request: Annotated[str, Field(description="What the user is asking for or needs help with")],
     ) -> str:
-        """Called when the user explains what they need help with."""
-        request_lower = user_request.lower()
+        """Classify the user request into one of: contact, felling, unknown."""
+
+        prompt = f"""
+        You are an intent classifier for Karnataka government services.
+        Classify the following request into exactly one category:
+        - "contact" → general inquiries, complaints, feedback, department contact
+        - "felling" → tree cutting, felling, transit permission, forest clearance
+        - "unknown" → anything else
+
+        Respond ONLY in JSON format, no extra text:
+        {{
+          "intent": "contact" | "felling" | "unknown"
+        }}
+
+        Request: "{user_request}"
+        """
+
+        try:
+            resp = await self.llm.chat([ChatMessage(role="user", content=prompt)])
+            result = json.loads(resp.content.strip())
+            intent = result.get("intent", "unknown").lower()
+        except Exception as e:
+            logger.error(f"Intent detection failed: {e}")
+            intent = "unknown"
+
         userdata = self.session.userdata
-        
-        # Contact form - general inquiries, complaints, feedback, department contact
-        contact_keywords = [
-            'complaint', 'complain', 'feedback', 'inquiry', 'inquire', 'question', 'ask',
-            'contact', 'reach', 'speak', 'talk', 'department', 'office', 'help', 'support',
-            'information', 'details', 'know', 'find out', 'general', 'service', 'problem',
-            'issue', 'concern', 'suggestion', 'request', 'application status', 'status'
-        ]
-        
-        # Felling form - tree cutting, forest permissions
-        felling_keywords = [
-            'tree', 'trees', 'cut', 'cutting', 'fell', 'felling', 'remove', 'removal',
-            'forest', 'wood', 'timber', 'permission', 'permit', 'clearance', 'transit',
-            'transport', 'move', 'chop', 'harvest', 'logging'
-        ]
-        
-        # Check for contact form intent
-        if any(keyword in request_lower for keyword in contact_keywords):
-            agent, message = await self.to_contact_form()
+
+        # Route based on intent
+        if intent == "contact":
+            return await self.to_contact_form()
+
+        elif intent == "felling":
+            return await self.to_felling_form()
+
+        else:
             if userdata.preferred_language == "kannada":
-                return "ಸರಿ, ನಾನು ನಿಮಗೆ ಸಂಪರ್ಕ ಫಾರ್ಮ್ ಭರ್ತಿ ಮಾಡಲು ಸಹಾಯ ಮಾಡುತ್ತೇನೆ."
-            return "I understand you need to contact a department or make an inquiry. Let me help you with the contact form."
-        
-        # Check for felling form intent  
-        if any(keyword in request_lower for keyword in felling_keywords):
-            agent, message = await self.to_felling_form()
-            if userdata.preferred_language == "kannada":
-                return "ಸರಿ, ನಾನು ನಿಮಗೆ ಮರ ಕಡಿಯುವ ಅನುಮತಿ ಫಾರ್ಮ್ ಭರ್ತಿ ಮಾಡಲು ಸಹಾಯ ಮಾಡುತ್ತೇನೆ."
-            return "I understand you need tree cutting permission. Let me help you with the felling transit permission form."
-        
-        # If no match, politely decline
-        if userdata.preferred_language == "kannada":
-            return "ಕ್ಷಮಿಸಿ, ನಾನು ಆ ವಿಷಯದಲ್ಲಿ ಸಹಾಯ ಮಾಡಲು ಸಾಧ್ಯವಿಲ್ಲ. ನಾನು ಕೇವಲ ಸಾಮಾನ್ಯ ವಿಚಾರಣೆಗಳು ಮತ್ತು ಮರ ಕಡಿಯುವ ಅನುಮತಿಗಳಿಗೆ ಸಹಾಯ ಮಾಡಬಲ್ಲೆ."
-        return "I'm sorry, I can't help you with that specific request. I can only assist with general inquiries and tree cutting permissions. Is there anything else I can help you with in these areas?"
+                return "ಕ್ಷಮಿಸಿ, ನಾನು ಆ ವಿಷಯದಲ್ಲಿ ಸಹಾಯ ಮಾಡಲು ಸಾಧ್ಯವಿಲ್ಲ. ನಾನು ಕೇವಲ ಸಾಮಾನ್ಯ ವಿಚಾರಣೆಗಳು ಮತ್ತು ಮರ ಕಡಿಯುವ ಅನುಮತಿಗಳಿಗೆ ಸಹಾಯ ಮಾಡಬಲ್ಲೆ."
+            return "I'm sorry, I can't help with that specific request. I can only assist with general inquiries and tree cutting permissions."
