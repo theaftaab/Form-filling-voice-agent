@@ -2,7 +2,7 @@
 """
 Felling Form Agent - complete working version
 """
-
+from utils.validators.felling_dropdown_validator import validate_dropdown
 import logging
 from typing import Annotated
 from livekit.agents.llm import function_tool
@@ -71,7 +71,7 @@ class FellingFormAgent(BaseFormAgent):
                     "4. For khata/survey numbers, preserve alphanumeric values exactly. "
                     "5. For email IDs, capture them literally (e.g., 'example at gmail dot com' → 'example@gmail.com'). "
                     "6. Recognize common Kannada/English synonyms: "
-                    "   - acres → ಎಕರೆ, guntas → ಗುಂಟೆ, anna → ಅಣ್ಣಾ. "
+                    "   - acres → ಏಕರೆ, guntas → ಗುಂಟೆ, anna → ಅಣ್ಣಾ. "
                     "   - pincode → ಪಿನ್ ಕೋಡ್, khata → ಖಾತೆ, survey → ಸರ್ವೇ. "
                     "7. Do not summarize — transcribe exactly what was spoken. "
                     "8. This is not open conversation, it is **form data capture**. "
@@ -92,9 +92,9 @@ class FellingFormAgent(BaseFormAgent):
                     "- ಇತರೆ: ಕಡಿಯುವ ಉದ್ದೇಶ, ಗಡಿ ಗುರುತು ಮಾಡಿದ್ದೀರಾ (ಹೌದು/ಇಲ್ಲ), ಸರ್ಕಾರಕ್ಕೆ ಮೀಸಲಾಗಿದೆಯೇ (ಹೌದು/ಇಲ್ಲ), ನಿರ್ವಿಘ್ನ ಅನುಮತಿ (ಹೌದು/ಇಲ್ಲ), ಪರವಾನಗಿ ಲಗತ್ತಿಸಿದ್ದೀರಾ (ಹೌದು/ಇಲ್ಲ), ನಿಯಮ/ಷರತ್ತುಗಳನ್ನು ಒಪ್ಪುತ್ತೀರಾ (ಹೌದು/ಇಲ್ಲ).\n\n"
 
                     "⚠️ ಗುರುತಿಸುವ ನಿಯಮಗಳು:\n"
-                    "1. ಯಾವಾಗಲೂ ಸಂಖ್ಯೆಗಳನ್ನು **ಅಂಕಿಗಳಾಗಿ** (digits) ಹಿಂತಿರುಗಿಸಿ, ಪದಗಳಾಗಿ ಬೇಡ (ಉದಾ: 'ಎಂಟು' ಅಥವಾ 'eight' → '8'). "
+                    "1. ಯಾವಾಗಲೂ ಸಂಖ್ಯೆಗಳನ್ನು **ಅಂಕೆಗಳಾಗಿ** (digits) ಹಿಂತಿರುಗಿಸಿ, ಪದಗಳಾಗಿ ಬೇಡ (ಉದಾ: 'ಎಂಟು' ಅಥವಾ 'eight' → '8'). "
                     "2. ಮೊಬೈಲ್ ಸಂಖ್ಯೆಗಳು — ಯಾವುದೇ ಖಾಲಿ ಜಾಗವಿಲ್ಲದೆ ನಿರಂತರ ಅಂಕೆಗಳಾಗಿ ಬರೆಯಬೇಕು. "
-                    "3. ಪಿನ್‌ಕೋಡ್ — ಕಡ್ಡಾಯವಾಗಿ 6 ಅಂಕಿಗಳಾಗಿರಬೇಕು. "
+                    "3. ಪಿನ್‌ಕೋಡ್ — ಕಡ್ಡಾಯವಾಗಿ 6 ಅಂಕೆಗಳಾಗಿರಬೇಕು. "
                     "4. ಖಾತೆ/ಸರ್ವೇ ಸಂಖ್ಯೆ — ಅಕ್ಷರ-ಅಂಕೆ (alphanumeric) ಮೌಲ್ಯವನ್ನು ಅಚ್ಚುಕಟ್ಟಾಗಿ ಉಳಿಸಬೇಕು. "
                     "5. ಇಮೇಲ್ ಐಡಿಗಳು — ಶಬ್ದರೂಪವನ್ನು ನೇರವಾಗಿ ಸೆರೆಹಿಡಿಯಿರಿ (ಉದಾ: 'example at gmail dot com' → 'example@gmail.com'). "
                     "6. ಸಾಮಾನ್ಯ ಕನ್ನಡ/ಇಂಗ್ಲಿಷ್ ಸಮಾನಾರ್ಥಕ ಪದಗಳನ್ನು ಗುರುತಿಸಬೇಕು: "
@@ -135,16 +135,95 @@ class FellingFormAgent(BaseFormAgent):
     @function_tool()
     async def update_in_area_type(self, in_area_type: Annotated[str, Field(description="Type of area")]) -> str:
         userdata = self.session.userdata
+        if not validate_dropdown("in_area_type", in_area_type):
+            if userdata.preferred_language == "kannada":
+                return "ದಯವಿಟ್ಟು ಮಾನ್ಯವಾದ ಪ್ರದೇಶದ ವಿಧವನ್ನು ನಮೂದಿಸಿ (ಉದಾ: ನಗರ ಪ್ರದೇಶ ಅಥವಾ ಗ್ರಾಮೀಣ ಪ್ರದೇಶ)."
+            return "Please select a valid area type (Urban Area or Rural Area)."
+
         userdata.felling_form.in_area_type = in_area_type
-        await send_to_frontend(userdata.ctx.room, {"in_area_type": in_area_type}, topic="formUpdate")
+        await send_to_frontend(userdata.ctx.room, {"inAreaType": in_area_type}, topic="formUpdate")
         return "ನಿಮ್ಮ ಜಿಲ್ಲೆ ಯಾವುದು?" if userdata.preferred_language == "kannada" else "Which district is the land located in?"
 
     @function_tool()
-    async def update_district(self, district: Annotated[str, Field(description="District name")]) -> str:
+    async def update_district(self, district: Annotated[str, Field(description="District name in English or Kannada")]) -> str:
         userdata = self.session.userdata
-        userdata.felling_form.district = district
-        await send_to_frontend(userdata.ctx.room, {"district": district}, topic="formUpdate")
-        return "ನಿಮ್ಮ ತಾಲೂಕು ಯಾವುದು?" if userdata.preferred_language == "kannada" else "Which taluk?"
+        
+        # English to Kannada district mapping
+        district_mapping = {
+            # English: Kannada
+            "Bagalkote": "ಬಾಗಲಕೋಟೆ",
+            "Ballari (Bellary)": "ಬಳ್ಳಾರಿ",
+            "Belagavi (Belgaum)": "ಬೆಳಗಾವಿ",
+            "Bengaluru Rural": "ಬೆಂಗಳೂರು ಗ್ರಾಮೀಣ",
+            "Bengaluru Urban": "ಬೆಂಗಳೂರು ನಗರ",
+            "Bidar": "ಬೀದರ್",
+            "Chamarajanagar": "ಚಾಮರಾಜನಗರ",
+            "Chikkaballapur": "ಚಿಕ್ಕಬಳ್ಳಾಪುರ",
+            "Chikkamagaluru (Chikmagalur)": "ಚಿಕ್ಕಮಗಳೂರು",
+            "Chitradurga": "ಚಿತ್ರದುರ್ಗ",
+            "Dakshina Kannada": "ದಕ್ಷಿಣ ಕನ್ನಡ",
+            "Davanagere": "ದಾವಣಗೆರೆ",
+            "Dharwad": "ಧಾರವಾಡ",
+            "Gadag": "ಗದಗ",
+            "Hassan": "ಹಾಸನ",
+            "Haveri": "ಹಾವೇರಿ",
+            "Kalaburagi (Gulbarga)": "ಕಲಬುರಗಿ",
+            "Kodagu (Coorg)": "ಕೊಡಗು",
+            "Kolar": "ಕೋಲಾರ",
+            "Koppal": "ಕೊಪ್ಪಳ",
+            "Mandya": "ಮಂಡ್ಯ",
+            "Mysuru (Mysore)": "ಮೈಸೂರು",
+            "Raichur": "ರಾಯಚೂರು",
+            "Ramanagara": "ರಾಮನಗರ",
+            "Shivamogga (Shimoga)": "ಶಿವಮೊಗ್ಗ",
+            "Tumakuru (Tumkur)": "ತುಮಕೂರು",
+            "Udupi": "ಉಡುಪಿ",
+            "Uttara Kannada (Karwar)": "ಉತ್ತರ ಕನ್ನಡ",
+            "Vijayapura (Bijapur)": "ವಿಜಾಪುರ",
+            "Yadgir": "ಯಾದಗಿರಿ"
+        }
+
+        # Create a reverse mapping (Kannada to English)
+        kannada_to_english = {v: k for k, v in district_mapping.items()}
+
+        # Check if input is in English or Kannada
+        normalized_input = district.strip()
+        is_kannada = any(char in ['ಀ', 'ಁ', 'ಂ', 'ಃ', '಄', 'ಅ', 'ಆ', 'ಇ', 'ಈ', 'ಉ'] for char in normalized_input)
+
+        # Check if the input matches any district (case-insensitive)
+        matched_district = None
+        if is_kannada:
+            # Check against Kannada names
+            for kannada_name, english_name in district_mapping.items():
+                if normalized_input.lower() == kannada_name.lower():
+                    matched_district = english_name
+                    break
+        else:
+            # Check against English names (with or without parentheses)
+            for english_name in district_mapping.keys():
+                # Remove text in parentheses for matching
+                base_name = re.sub(r'\s*\([^)]*\)', '', english_name).lower()
+                if (normalized_input.lower() == english_name.lower() or 
+                    normalized_input.lower() == base_name.lower()):
+                    matched_district = english_name
+                    break
+
+        if not matched_district:
+            if userdata.preferred_language == "kannada":
+                return "ದಯವಿಟ್ಟು ಮಾನ್ಯವಾದ ಜಿಲ್ಲೆಯ ಹೆಸರನ್ನು ನಮೂದಿಸಿ. ಉದಾಹರಣೆ: ಬೆಂಗಳೂರು ನಗರ ಅಥವಾ Bengaluru Urban"
+            return "Please enter a valid district name. Example: Bengaluru Urban or ಬೆಂಗಳೂರು ನಗರ"
+        if not validate_dropdown("district", matched_district):
+            if userdata.preferred_language == "kannada":
+                return "ದಯವಿಟ್ಟು ಮಾನ್ಯವಾದ ಜಿಲ್ಲೆಯ ಹೆಸರನ್ನು ನಮೂದಿಸಿ."
+            return "Please select a valid district from the list."
+        # Store the standardized English district name
+        userdata.felling_form.district = matched_district
+        await send_to_frontend(userdata.ctx.room, {"district": matched_district}, topic="formUpdate")
+
+        # Get next question in appropriate language
+        if userdata.preferred_language == "kannada":
+            return "ನಿಮ್ಮ ತಾಲೂಕು ಯಾವುದು?"
+        return "Which taluk?"
 
     @function_tool()
     async def update_taluk(self, taluk: Annotated[str, Field(description="Taluk name")]) -> str:
@@ -225,11 +304,15 @@ class FellingFormAgent(BaseFormAgent):
     # ---------------- Section 2: Applicant ----------------
 
     @function_tool()
-    async def update_applicant_type(self,
-                                    applicant_type: Annotated[str, Field(description="Applicant type")]) -> str:
+    async def update_applicant_type(self, applicant_type: Annotated[str, Field(description="Applicant type")]) -> str:
         userdata = self.session.userdata
+        if not validate_dropdown("applicant_type", applicant_type):
+            if userdata.preferred_language == "kannada":
+                return "ದಯವಿಟ್ಟು ಮಾನ್ಯವಾದ ಅರ್ಜಿದಾರರ ವಿಧವನ್ನು ನಮೂದಿಸಿ (ವೈಯಕ್ತಿಕ / ಸಂಸ್ಥೆ / ಜಿಪಿಎ ಧಾರಕ)."
+            return "Please select a valid applicant type (Individual / Entity / GPA Holder)."
+
         userdata.felling_form.applicant_type = applicant_type
-        await send_to_frontend(userdata.ctx.room, {"applicant_type": applicant_type}, topic="formUpdate")
+        await send_to_frontend(userdata.ctx.room, {"applicantType": applicant_type}, topic="formUpdate")
         return "ನಿಮ್ಮ ಪೂರ್ಣ ಹೆಸರು ಏನು?" if userdata.preferred_language == "kannada" else "What is your full name?"
 
     @function_tool()
@@ -380,12 +463,16 @@ class FellingFormAgent(BaseFormAgent):
         return "ಭೂಮಿಯ ಗಡಿ ಗುರುತು ಮಾಡಿದ್ದೀರಾ?" if userdata.preferred_language == "kannada" else "Is the boundary demarcated?"
 
     @function_tool()
-    async def update_boundary_demarcated(self, val: Annotated[
-        str, Field(description="Boundary demarcated (Yes/No)")]) -> str:
+    async def update_applicant_type(self, applicant_type: Annotated[str, Field(description="Applicant type")]) -> str:
         userdata = self.session.userdata
-        userdata.felling_form.boundary_demarcated = val
-        await send_to_frontend(userdata.ctx.room, {"boundary_demarcated": val}, topic="formUpdate")
-        return "ಮರ ಸರ್ಕಾರಕ್ಕೆ ಮೀಸಲಾಗಿದೆಯೇ?" if userdata.preferred_language == "kannada" else "Is the tree reserved to government?"
+        if not validate_dropdown("applicant_type", applicant_type):
+            if userdata.preferred_language == "kannada":
+                return "ದಯವಿಟ್ಟು ಮಾನ್ಯವಾದ ಅರ್ಜಿದಾರರ ವಿಧವನ್ನು ನಮೂದಿಸಿ (ವೈಯಕ್ತಿಕ / ಸಂಸ್ಥೆ / ಜಿಪಿಎ ಧಾರಕ)."
+            return "Please select a valid applicant type (Individual / Entity / GPA Holder)."
+
+        userdata.felling_form.applicant_type = applicant_type
+        await send_to_frontend(userdata.ctx.room, {"applicantType": applicant_type}, topic="formUpdate")
+        return "ನಿಮ್ಮ ಪೂರ್ಣ ಹೆಸರು ಏನು?" if userdata.preferred_language == "kannada" else "What is your full name?"
 
     @function_tool()
     async def update_tree_reserved_to_gov(self,
