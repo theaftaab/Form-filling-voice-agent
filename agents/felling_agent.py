@@ -14,7 +14,6 @@ from utils.frontend import send_to_frontend
 import regex as re
 logger = logging.getLogger(__name__)
 
-
 class FellingFormAgent(BaseFormAgent):
     """
     Conversational agent for Tree Felling Permission Form.
@@ -135,95 +134,112 @@ class FellingFormAgent(BaseFormAgent):
     @function_tool()
     async def update_in_area_type(self, in_area_type: Annotated[str, Field(description="Type of area")]) -> str:
         userdata = self.session.userdata
-        if not validate_dropdown("in_area_type", in_area_type):
-            if userdata.preferred_language == "kannada":
-                return "ದಯವಿಟ್ಟು ಮಾನ್ಯವಾದ ಪ್ರದೇಶದ ವಿಧವನ್ನು ನಮೂದಿಸಿ (ಉದಾ: ನಗರ ಪ್ರದೇಶ ಅಥವಾ ಗ್ರಾಮೀಣ ಪ್ರದೇಶ)."
-            return "Please select a valid area type (Urban Area or Rural Area)."
 
-        userdata.felling_form.in_area_type = in_area_type
-        await send_to_frontend(userdata.ctx.room, {"inAreaType": in_area_type}, topic="formUpdate")
+        # 🧩 Allowed options — mirror frontend dropdown
+        AREA_TYPES = [
+            "Urban Area",
+            "Rural Area",
+            "Private Land",
+            "Forest Land",
+            "Revenue Land"
+        ]
+
+        # 🧠 Normalize user input
+        spoken_value = in_area_type.strip().lower()
+
+        # --- Phonetic/Fuzzy match ---
+        try:
+            from rapidfuzz import fuzz, process
+            best_match = process.extractOne(spoken_value, [v.lower() for v in AREA_TYPES], scorer=fuzz.WRatio)
+            matched_value = None
+            if best_match and best_match[1] >= 65:
+                matched_value = AREA_TYPES[[v.lower() for v in AREA_TYPES].index(best_match[0])]
+        except ImportError:
+            # fallback if rapidfuzz not installed
+            import difflib
+            matches = difflib.get_close_matches(spoken_value, [v.lower() for v in AREA_TYPES], n=1, cutoff=0.6)
+            matched_value = AREA_TYPES[[v.lower() for v in AREA_TYPES].index(matches[0])] if matches else None
+
+        # --- If nothing matched ---
+        if not matched_value:
+            if userdata.preferred_language == "kannada":
+                return "ದಯವಿಟ್ಟು ಮಾನ್ಯವಾದ ಪ್ರದೇಶದ ವಿಧವನ್ನು ಹೇಳಿ (ಉದಾ: ನಗರ ಅಥವಾ ಗ್ರಾಮೀಣ ಪ್ರದೇಶ)."
+            return "Please specify a valid area type (Urban Area / Rural Area)."
+
+        # --- Save and push to frontend ---
+        userdata.felling_form.in_area_type = matched_value
+        await send_to_frontend(userdata.ctx.room, {"in_area_type": matched_value}, topic="formUpdate")
+
+        logger.info(f"[in_area_type] Input='{in_area_type}' → Matched='{matched_value}'")
+
         return "ನಿಮ್ಮ ಜಿಲ್ಲೆ ಯಾವುದು?" if userdata.preferred_language == "kannada" else "Which district is the land located in?"
 
     @function_tool()
     async def update_district(self, district: Annotated[str, Field(description="District name in English or Kannada")]) -> str:
         userdata = self.session.userdata
-        
-        # English to Kannada district mapping
-        district_mapping = {
-            # English: Kannada
-            "Bagalkote": "ಬಾಗಲಕೋಟೆ",
-            "Ballari (Bellary)": "ಬಳ್ಳಾರಿ",
-            "Belagavi (Belgaum)": "ಬೆಳಗಾವಿ",
-            "Bengaluru Rural": "ಬೆಂಗಳೂರು ಗ್ರಾಮೀಣ",
-            "Bengaluru Urban": "ಬೆಂಗಳೂರು ನಗರ",
-            "Bidar": "ಬೀದರ್",
-            "Chamarajanagar": "ಚಾಮರಾಜನಗರ",
-            "Chikkaballapur": "ಚಿಕ್ಕಬಳ್ಳಾಪುರ",
-            "Chikkamagaluru (Chikmagalur)": "ಚಿಕ್ಕಮಗಳೂರು",
-            "Chitradurga": "ಚಿತ್ರದುರ್ಗ",
-            "Dakshina Kannada": "ದಕ್ಷಿಣ ಕನ್ನಡ",
-            "Davanagere": "ದಾವಣಗೆರೆ",
-            "Dharwad": "ಧಾರವಾಡ",
-            "Gadag": "ಗದಗ",
-            "Hassan": "ಹಾಸನ",
-            "Haveri": "ಹಾವೇರಿ",
-            "Kalaburagi (Gulbarga)": "ಕಲಬುರಗಿ",
-            "Kodagu (Coorg)": "ಕೊಡಗು",
-            "Kolar": "ಕೋಲಾರ",
-            "Koppal": "ಕೊಪ್ಪಳ",
-            "Mandya": "ಮಂಡ್ಯ",
-            "Mysuru (Mysore)": "ಮೈಸೂರು",
-            "Raichur": "ರಾಯಚೂರು",
-            "Ramanagara": "ರಾಮನಗರ",
-            "Shivamogga (Shimoga)": "ಶಿವಮೊಗ್ಗ",
-            "Tumakuru (Tumkur)": "ತುಮಕೂರು",
-            "Udupi": "ಉಡುಪಿ",
-            "Uttara Kannada (Karwar)": "ಉತ್ತರ ಕನ್ನಡ",
-            "Vijayapura (Bijapur)": "ವಿಜಾಪುರ",
-            "Yadgir": "ಯಾದಗಿರಿ"
-        }
 
-        # Create a reverse mapping (Kannada to English)
-        kannada_to_english = {v: k for k, v in district_mapping.items()}
+        # 🎯 English + Kannada mappings (ensure 1:1 index)
+        DISTRICTS_EN = [
+            "Bagalkote", "Ballari (Bellary)", "Belagavi (Belgaum)", "Bengaluru Rural",
+            "Bengaluru Urban", "Bidar", "Chamarajanagar", "Chikkaballapur",
+            "Chikkamagaluru (Chikmagalur)", "Chitradurga", "Dakshina Kannada",
+            "Davanagere", "Dharwad", "Gadag", "Hassan", "Haveri",
+            "Kalaburagi (Gulbarga)", "Kodagu (Coorg)", "Kolar", "Koppal",
+            "Mandya", "Mysuru (Mysore)", "Raichur", "Ramanagara",
+            "Shivamogga (Shimoga)", "Tumakuru (Tumkur)", "Udupi",
+            "Uttara Kannada (Karwar)", "Vijayapura (Bijapur)", "Yadgir"
+        ]
 
-        # Check if input is in English or Kannada
-        normalized_input = district.strip()
-        is_kannada = any(char in ['ಀ', 'ಁ', 'ಂ', 'ಃ', '಄', 'ಅ', 'ಆ', 'ಇ', 'ಈ', 'ಉ'] for char in normalized_input)
+        DISTRICTS_KN = [
+            "ಬಾಗಲಕೋಟೆ", "ಬಳ್ಳಾರಿ", "ಬೆಳಗಾವಿ", "ಬೆಂಗಳೂರು ಗ್ರಾಮೀಣ",
+            "ಬೆಂಗಳೂರು ನಗರ", "ಬೀದರ್", "ಚಾಮರಾಜನಗರ", "ಚಿಕ್ಕಬಳ್ಳಾಪುರ",
+            "ಚಿಕ್ಕಮಗಳೂರು", "ಚಿತ್ರದುರ್ಗ", "ದಕ್ಷಿಣ ಕನ್ನಡ", "ದಾವಣಗೆರೆ",
+            "ಧಾರವಾಡ", "ಗದಗ", "ಹಾಸನ", "ಹಾವೇರಿ", "ಕಲಬುರಗಿ", "ಕೊಡಗು",
+            "ಕೋಲಾರ", "ಕೊಪ್ಪಳ", "ಮಂಡ್ಯ", "ಮೈಸೂರು", "ರಾಯಚೂರು", "ರಾಮನಗರ",
+            "ಶಿವಮೊಗ್ಗ", "ತುಮಕೂರು", "ಉಡುಪಿ", "ಉತ್ತರ ಕನ್ನಡ", "ವಿಜಾಪುರ", "ಯಾದಗಿರಿ"
+        ]
 
-        # Check if the input matches any district (case-insensitive)
+        # Combine all for similarity comparison
+        all_names = DISTRICTS_EN + DISTRICTS_KN
+
+        spoken_value = district.strip().lower()
         matched_district = None
-        if is_kannada:
-            # Check against Kannada names
-            for kannada_name, english_name in district_mapping.items():
-                if normalized_input.lower() == kannada_name.lower():
-                    matched_district = english_name
-                    break
-        else:
-            # Check against English names (with or without parentheses)
-            for english_name in district_mapping.keys():
-                # Remove text in parentheses for matching
-                base_name = re.sub(r'\s*\([^)]*\)', '', english_name).lower()
-                if (normalized_input.lower() == english_name.lower() or 
-                    normalized_input.lower() == base_name.lower()):
-                    matched_district = english_name
-                    break
 
+        try:
+            from rapidfuzz import fuzz, process
+            best_match = process.extractOne(spoken_value, [v.lower() for v in all_names], scorer=fuzz.WRatio)
+            if best_match and best_match[1] >= 65:
+                matched_value = best_match[0]
+                # If Kannada match, map to English equivalent
+                if matched_value in [v.lower() for v in DISTRICTS_KN]:
+                    idx = [v.lower() for v in DISTRICTS_KN].index(matched_value)
+                    matched_district = DISTRICTS_EN[idx]
+                else:
+                    matched_district = DISTRICTS_EN[[v.lower() for v in DISTRICTS_EN].index(matched_value)]
+        except ImportError:
+            import difflib
+            matches = difflib.get_close_matches(spoken_value, [v.lower() for v in all_names], n=1, cutoff=0.6)
+            if matches:
+                matched_value = matches[0]
+                if matched_value in [v.lower() for v in DISTRICTS_KN]:
+                    idx = [v.lower() for v in DISTRICTS_KN].index(matched_value)
+                    matched_district = DISTRICTS_EN[idx]
+                else:
+                    matched_district = DISTRICTS_EN[[v.lower() for v in DISTRICTS_EN].index(matched_value)]
+
+        # --- If no match found ---
         if not matched_district:
             if userdata.preferred_language == "kannada":
-                return "ದಯವಿಟ್ಟು ಮಾನ್ಯವಾದ ಜಿಲ್ಲೆಯ ಹೆಸರನ್ನು ನಮೂದಿಸಿ. ಉದಾಹರಣೆ: ಬೆಂಗಳೂರು ನಗರ ಅಥವಾ Bengaluru Urban"
-            return "Please enter a valid district name. Example: Bengaluru Urban or ಬೆಂಗಳೂರು ನಗರ"
-        if not validate_dropdown("district", matched_district):
-            if userdata.preferred_language == "kannada":
-                return "ದಯವಿಟ್ಟು ಮಾನ್ಯವಾದ ಜಿಲ್ಲೆಯ ಹೆಸರನ್ನು ನಮೂದಿಸಿ."
-            return "Please select a valid district from the list."
-        # Store the standardized English district name
+                return "ದಯವಿಟ್ಟು ಮಾನ್ಯವಾದ ಜಿಲ್ಲೆಯ ಹೆಸರನ್ನು ನಮೂದಿಸಿ (ಉದಾ: ಬೆಂಗಳೂರು ನಗರ ಅಥವಾ ಮೈಸೂರು)."
+            return "Please enter a valid district name (e.g., Bengaluru Urban or Mysuru)."
+
+        # --- Save and push to frontend ---
         userdata.felling_form.district = matched_district
         await send_to_frontend(userdata.ctx.room, {"district": matched_district}, topic="formUpdate")
 
-        # Get next question in appropriate language
-        if userdata.preferred_language == "kannada":
-            return "ನಿಮ್ಮ ತಾಲೂಕು ಯಾವುದು?"
-        return "Which taluk?"
+        logger.info(f"[district] Input='{district}' → Matched='{matched_district}'")
+
+        return "ನಿಮ್ಮ ತಾಲೂಕು ಯಾವುದು?" if userdata.preferred_language == "kannada" else "Which taluk?"
 
     @function_tool()
     async def update_taluk(self, taluk: Annotated[str, Field(description="Taluk name")]) -> str:
