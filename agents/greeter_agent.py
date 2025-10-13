@@ -48,11 +48,11 @@ class GreeterAgent(BaseAgent):
         userdata = self.session.userdata
         userdata.agent_type = "greeter"
 
+        # Set Kannada as default language if not already set
         if not userdata.language_selected:
-            await self.session.say(
-                "Hello! I'm here to help you with Karnataka Forest services. "
-                "Would you prefer to continue in English or Kannada?"
-            )
+            userdata.preferred_language = "kannada"
+            userdata.language_selected = True
+            await self._ask_for_service_intent("kannada")
         else:
             await self._ask_for_service_intent(userdata.preferred_language)
 
