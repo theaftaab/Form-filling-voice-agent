@@ -135,7 +135,6 @@ class FellingFormAgent(BaseFormAgent):
     async def update_in_area_type(self, in_area_type: Annotated[str, Field(description="Type of area")]) -> str:
         userdata = self.session.userdata
 
-        # 🧩 Allowed options — mirror frontend dropdown
         AREA_TYPES = [
             "Urban Area",
             "Rural Area",
@@ -144,33 +143,43 @@ class FellingFormAgent(BaseFormAgent):
             "Revenue Land"
         ]
 
-        # 🧠 Normalize user input
         spoken_value = in_area_type.strip().lower()
+        print(f"\n🔍 Raw input: '{in_area_type}' → normalized: '{spoken_value}'")
 
-        # --- Phonetic/Fuzzy match ---
+        matched_value = None
+
         try:
             from rapidfuzz import fuzz, process
-            best_match = process.extractOne(spoken_value, [v.lower() for v in AREA_TYPES], scorer=fuzz.WRatio)
-            matched_value = None
+            best_match = process.extractOne(
+                spoken_value,
+                [v.lower() for v in AREA_TYPES],
+                scorer=fuzz.WRatio
+            )
+            print(f"🧮 RapidFuzz best_match: {best_match}")
+
             if best_match and best_match[1] >= 65:
                 matched_value = AREA_TYPES[[v.lower() for v in AREA_TYPES].index(best_match[0])]
+                print(f"✅ Matched Value: {matched_value} (score={best_match[1]})")
+            else:
+                print("❌ No match found above threshold (65).")
+
         except ImportError:
-            # fallback if rapidfuzz not installed
             import difflib
             matches = difflib.get_close_matches(spoken_value, [v.lower() for v in AREA_TYPES], n=1, cutoff=0.6)
+            print(f"🔁 Using difflib fallback, matches: {matches}")
             matched_value = AREA_TYPES[[v.lower() for v in AREA_TYPES].index(matches[0])] if matches else None
 
-        # --- If nothing matched ---
         if not matched_value:
+            print("⚠️ No valid area type matched. Asking user to clarify.")
             if userdata.preferred_language == "kannada":
                 return "ದಯವಿಟ್ಟು ಮಾನ್ಯವಾದ ಪ್ರದೇಶದ ವಿಧವನ್ನು ಹೇಳಿ (ಉದಾ: ನಗರ ಅಥವಾ ಗ್ರಾಮೀಣ ಪ್ರದೇಶ)."
             return "Please specify a valid area type (Urban Area / Rural Area)."
 
-        # --- Save and push to frontend ---
         userdata.felling_form.in_area_type = matched_value
         await send_to_frontend(userdata.ctx.room, {"in_area_type": matched_value}, topic="formUpdate")
 
         logger.info(f"[in_area_type] Input='{in_area_type}' → Matched='{matched_value}'")
+        print(f"📤 Sent to frontend: {matched_value}")
 
         return "ನಿಮ್ಮ ಜಿಲ್ಲೆ ಯಾವುದು?" if userdata.preferred_language == "kannada" else "Which district is the land located in?"
 
