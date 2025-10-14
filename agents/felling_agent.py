@@ -135,13 +135,23 @@ class FellingFormAgent(BaseFormAgent):
     async def update_in_area_type(self, in_area_type: Annotated[str, Field(description="Type of area")]) -> str:
         userdata = self.session.userdata
 
-        AREA_TYPES = [
+        AREA_TYPES_EN = [
             "Urban Area",
             "Rural Area",
             "Private Land",
             "Forest Land",
             "Revenue Land"
         ]
+        
+        AREA_TYPES_KN = [
+            "ನಗರ ಪ್ರದೇಶ",
+            "ಗ್ರಾಮೀಣ ಪ್ರದೇಶ",
+            "ಖಾಸಗಿ ಭೂಮಿ",
+            "ಅರಣ್ಯ ಭೂಮಿ",
+            "ರಾಜಸ್ವ ಭೂಮಿ"
+        ]
+        
+        AREA_TYPES = AREA_TYPES_EN + AREA_TYPES_KN
 
         spoken_value = in_area_type.strip().lower()
         print(f"\n🔍 Raw input: '{in_area_type}' → normalized: '{spoken_value}'")
